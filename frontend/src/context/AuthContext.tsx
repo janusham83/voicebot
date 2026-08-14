@@ -1,32 +1,26 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { authService } from '../services/authService'
-import type { User } from '../types/voice'
-
-interface AuthContextValue {
-  user: User | null
-  loading: boolean
-  login: (email: string, password: string) => Promise<void>
-  register: (name: string, email: string, password: string, passwordConfirmation: string) => Promise<void>
-  logout: () => Promise<void>
-}
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined)
+import { AuthContext } from './authContext.ts'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!authService.isAuthenticated()) {
-      setLoading(false)
-      return
+    const fetchUser = async () => {
+      if (!authService.isAuthenticated()) {
+        return
+      }
+
+      try {
+        const authenticatedUser = await authService.getUser()
+        setUser(authenticatedUser)
+      } catch {
+        setUser(null)
+      }
     }
 
-    authService
-      .getUser()
-      .then(setUser)
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false))
+    fetchUser().finally(() => setLoading(false))
   }, [])
 
   async function login(email: string, password: string) {
@@ -47,12 +41,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{ user, loading, login, register, logout }}>{children}</AuthContext.Provider>
   )
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext)
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider')
-  }
-  return context
 }
