@@ -1,0 +1,199 @@
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #6a5cff 0%, #7f9dff 100%);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: #fff;
+  padding: 2rem;
+  border-radius: 1rem;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.15);
+}
+
+.voicebot-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  max-width: 720px;
+  margin: 0 auto;
+  background: #fff;
+}
+
+.voicebot-page__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.voicebot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.voicebot__language {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.voicebot__language-option {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.voicebot__language-option.is-active {
+  border-color: #6a5cff;
+  background: #6a5cff;
+  color: #fff;
+}
+
+.conversation {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem 1rem;
+}
+
+.message-row {
+  display: flex;
+  margin-bottom: 0.75rem;
+}
+
+.message-row--user {
+  justify-content: flex-end;
+}
+
+.message-row--assistant {
+  justify-content: flex-start;
+}
+
+.message-bubble {
+  max-width: 75%;
+  padding: 0.65rem 1rem;
+  border-radius: 1rem;
+}
+
+.message-bubble--user {
+  background: #6a5cff;
+  color: #fff;
+  border-bottom-right-radius: 0.25rem;
+}
+
+.message-bubble--assistant {
+  background: #f1f2f6;
+  color: #1f2333;
+  border-bottom-left-radius: 0.25rem;
+}
+
+.message-bubble--system {
+  margin: 0.5rem auto;
+  font-size: 0.8rem;
+  color: #6b7280;
+  text-align: center;
+}
+
+.message-bubble__role {
+  display: block;
+  font-size: 0.7rem;
+  opacity: 0.7;
+  margin-bottom: 0.15rem;
+}
+
+.message-bubble__text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.voicebot__controls {
+  padding: 1.5rem 1rem 2.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.mic-button {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: none;
+  font-size: 2rem;
+  color: #fff;
+  background: #6a5cff;
+  box-shadow: 0 10px 25px rgba(106, 92, 255, 0.35);
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.mic-button:active {
+  transform: scale(0.96);
+}
+
+.mic-button--listening {
+  background: #ef4444;
+  animation: pulse 1.4s infinite;
+}
+
+.mic-button--processing {
+  background: #f59e0b;
+}
+
+.mic-button--speaking {
+  background: #10b981;
+}
+
+.mic-button--error {
+  background: #6b7280;
+}
+
+.mic-button:disabled {
+  cursor: not-allowed;
+}
+
+.voice-status {
+  margin: 0;
+  font-weight: 500;
+  color: #4b5563;
+}
+
+.voice-status--error {
+  color: #ef4444;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 20px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+@media (max-width: 576px) {
+  .voicebot-page {
+    max-width: 100%;
+  }
+
+  .message-bubble {
+    max-width: 85%;
+  }
+}
