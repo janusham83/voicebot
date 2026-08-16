@@ -29,8 +29,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/admin/dashboard', [AdminController::class, 'dashboard']);
 
     Route::middleware('throttle:voice')->prefix('voice')->group(function () {
-        Route::post('/transcribe', [VoiceController::class, 'transcribe']);
         Route::post('/chat', [VoiceController::class, 'chat']);
-        Route::post('/synthesize', [VoiceController::class, 'synthesize']);
     });
 });

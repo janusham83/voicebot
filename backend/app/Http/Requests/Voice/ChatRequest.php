@@ -25,7 +25,7 @@ class ChatRequest extends FormRequest
         return [
             'conversation_id' => ['nullable', 'integer', 'exists:voice_conversations,id'],
             'message' => ['required', 'string', 'max:8000'],
-            'language' => ['nullable', 'string', 'in:si,en,auto'],
+            'language' => ['nullable', 'string', 'in:en'],
         ];
     }
 }

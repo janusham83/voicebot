@@ -2,44 +2,20 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Exceptions\OpenAIException;
+use App\Exceptions\AiServiceException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Voice\ChatRequest;
-use App\Http\Requests\Voice\SynthesizeRequest;
-use App\Http\Requests\Voice\TranscribeRequest;
 use App\Http\Resources\VoiceMessageResource;
 use App\Models\VoiceConversation;
-use App\Models\VoiceMessage;
-use App\Services\OpenAIService;
-use Illuminate\Http\Request;
+use App\Services\AiServiceFactory;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 
 class VoiceController extends Controller
 {
-    public function __construct(protected OpenAIService $openAIService)
+    public function __construct(protected AiServiceFactory $aiServiceFactory)
     {
         //
-    }
-
-    /**
-     * Convert an uploaded audio clip into text.
-     */
-    public function transcribe(TranscribeRequest $request)
-    {
-        $language = $request->validated('language');
-
-        try {
-            $result = $this->openAIService->transcribeAudio(
-                $request->file('audio')->getRealPath(),
-                $language === 'auto' ? null : $language
-            );
-        } catch (OpenAIException $e) {
-            return $this->error($e->userMessage, 422);
-        }
-
-        return $this->success('Audio transcribed successfully', $result);
     }
 
     /**
@@ -49,7 +25,7 @@ class VoiceController extends Controller
     {
         $user = $request->user();
         $conversationId = $request->validated('conversation_id');
-        $language = $request->validated('language') ?: 'auto';
+        $language = 'en';
 
         $conversation = $conversationId
             ? VoiceConversation::findOrFail($conversationId)
@@ -58,8 +34,9 @@ class VoiceController extends Controller
         if ($conversation) {
             Gate::authorize('update', $conversation);
         } else {
+            // Create a new conversation if no ID was provided.
             $conversation = $user->conversations()->create([
-                'title' => (string) str($request->validated('message'))->limit(50),
+                'title' => 'New Conversation', // A default title
                 'language' => $language,
                 'system_prompt' => config('voicebot.default_system_prompt'),
             ]);
@@ -73,18 +50,55 @@ class VoiceController extends Controller
 
         $settings = $user->voiceSettings;
 
+        // Use the factory to get the correct AI service based on user settings
+        $aiService = $this->aiServiceFactory->make($user);
+
         try {
-            $result = $this->openAIService->generateChatResponse(
-                $this->buildContext($conversation),
+            $context = $this->buildContext($conversation);
+
+            // STEP 3: Add detailed controller logging (Before)
+            Log::info('VOICEBOT BEFORE GEMINI', [
+                'user_id' => auth()->id(),
+                'conversation_id' => $conversation->id ?? null,
+                'messages' => $context,
+            ]);
+
+            $result = $aiService->generateChatResponse(
+                $context,
                 [
-                    'model' => $settings?->ai_model,
                     'temperature' => $settings?->temperature ?? 0.7,
                 ]
             );
-        } catch (OpenAIException $e) {
-            return $this->error($e->userMessage, 422, [
-                'user_message' => new VoiceMessageResource($userMessage),
+
+            // STEP 3: Add detailed controller logging (After)
+            Log::info('VOICEBOT AFTER GEMINI', [
+                'result' => $result,
             ]);
+        } catch (\Throwable $e) {
+            // STEP 4: Catch the real exception
+            Log::error('VOICEBOT REAL ERROR', [
+                'class' => get_class($e),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            // For local development, return a detailed error.
+            if (app()->environment('local')) {
+                return response()->json([
+                    'success' => false,
+                    'debug' => true,
+                    'exception' => get_class($e),
+                    'message' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                ], 500);
+            }
+
+            // For production, return a generic error.
+            $userMessage = $e instanceof AiServiceException ? $e->userMessage : 'Sorry, something went wrong while trying to generate chat response. Please try again.';
+            return $this->error($userMessage, 500);
         }
 
         $assistantMessage = $conversation->messages()->create([
@@ -94,44 +108,17 @@ class VoiceController extends Controller
             'tokens' => $result['tokens'],
         ]);
 
+        // STEP 3: Add detailed controller logging (Saved)
+        Log::info('VOICEBOT AI MESSAGE SAVED', [
+            'conversation_id' => $conversation->id ?? null,
+            'result' => $result,
+        ]);
+
         return $this->success('Response generated successfully', [
             'conversation_id' => $conversation->id,
             'message' => $result['message'],
             'user_message' => new VoiceMessageResource($userMessage),
             'assistant_message' => new VoiceMessageResource($assistantMessage),
-        ]);
-    }
-
-    /**
-     * Convert text to speech and store the resulting audio file.
-     */
-    public function synthesize(SynthesizeRequest $request)
-    {
-        $message = null;
-
-        if ($messageId = $request->validated('message_id')) {
-            $message = VoiceMessage::findOrFail($messageId);
-            Gate::authorize('update', $message->conversation);
-        }
-
-        try {
-            $audio = $this->openAIService->generateSpeech(
-                $request->validated('text'),
-                $request->validated('voice')
-            );
-        } catch (OpenAIException $e) {
-            return $this->error($e->userMessage, 422);
-        }
-
-        $path = 'voice-audio/'.Str::uuid().'.mp3';
-        Storage::disk('public')->put($path, $audio);
-
-        if ($message) {
-            $message->update(['audio_file' => $path]);
-        }
-
-        return $this->success('Speech generated successfully', [
-            'audio_url' => Storage::url($path),
         ]);
     }
 
@@ -160,4 +147,3 @@ class VoiceController extends Controller
         return $messages;
     }
 }
-

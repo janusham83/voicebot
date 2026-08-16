@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Exceptions\OpenAIException;
+use App\Exceptions\AiServiceException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -12,7 +12,7 @@ use Throwable;
 /**
  * Wraps all OpenAI API calls (STT, chat, TTS) behind a single, swappable service.
  */
-class OpenAIService
+class OpenAIService implements AiServiceInterface
 {
     protected string $apiKey;
 
@@ -27,6 +27,11 @@ class OpenAIService
         $this->timeout = (int) config('services.openai.timeout', 30);
     }
 
+    public function isConfigured(): bool
+    {
+        return $this->apiKey !== '';
+    }
+
     /**
      * Transcribe an audio file to text using OpenAI's speech-to-text model.
      *
@@ -37,9 +42,9 @@ class OpenAIService
     public function transcribeAudio(string $filePath, ?string $language = null): array
     {
         if (! is_readable($filePath)) {
-            throw new OpenAIException(
+            throw new AiServiceException(
                 'Sorry, I couldn\'t process that audio. Please try again.',
-                "Audio file not readable: {$filePath}"
+                "Audio file not readable: {$filePath}",
             );
         }
 
@@ -62,14 +67,14 @@ class OpenAIService
                 'text' => (string) $response->json('text'),
                 'language' => $language,
             ];
-        } catch (OpenAIException $e) {
+        } catch (AiServiceException $e) {
             throw $e;
         } catch (ConnectionException $e) {
             $this->logFailure('stt', $e);
-            throw new OpenAIException("Sorry, I couldn't understand the audio. Please try again.", $e->getMessage());
+            throw new AiServiceException("Sorry, I couldn't understand the audio. Please try again.", $e->getMessage());
         } catch (Throwable $e) {
             $this->logFailure('stt', $e);
-            throw new OpenAIException("Sorry, I couldn't understand the audio. Please try again.", $e->getMessage());
+            throw new AiServiceException("Sorry, I couldn't understand the audio. Please try again.", $e->getMessage());
         }
     }
 
@@ -84,7 +89,7 @@ class OpenAIService
         $options = array_filter($options, fn ($value) => $value !== null);
 
         $payload = array_merge([
-            'model' => config('services.openai.model'),
+            'model' => $options['model'] ?? config('services.openai.model'),
             'messages' => $messages,
             'temperature' => $options['temperature'] ?? 0.7,
         ], array_diff_key($options, ['temperature' => null]));
@@ -98,14 +103,14 @@ class OpenAIService
                 'message' => (string) $response->json('choices.0.message.content'),
                 'tokens' => (int) $response->json('usage.total_tokens', 0),
             ];
-        } catch (OpenAIException $e) {
+        } catch (AiServiceException $e) {
             throw $e;
         } catch (ConnectionException $e) {
             $this->logFailure('chat', $e);
-            throw new OpenAIException('Sorry, the AI assistant is unavailable right now. Please try again shortly.', $e->getMessage());
+            throw new AiServiceException('Sorry, the AI assistant is unavailable right now. Please try again shortly.', $e->getMessage());
         } catch (Throwable $e) {
             $this->logFailure('chat', $e);
-            throw new OpenAIException('Sorry, the AI assistant is unavailable right now. Please try again shortly.', $e->getMessage());
+            throw new AiServiceException('Sorry, the AI assistant is unavailable right now. Please try again shortly.', $e->getMessage());
         }
     }
 
@@ -126,14 +131,14 @@ class OpenAIService
             $this->throwIfFailed($response, 'generate speech');
 
             return $response->body();
-        } catch (OpenAIException $e) {
+        } catch (AiServiceException $e) {
             throw $e;
         } catch (ConnectionException $e) {
             $this->logFailure('tts', $e);
-            throw new OpenAIException('Sorry, I could not generate the voice response. Please try again.', $e->getMessage());
+            throw new AiServiceException('Sorry, I could not generate the voice response. Please try again.', $e->getMessage());
         } catch (Throwable $e) {
             $this->logFailure('tts', $e);
-            throw new OpenAIException('Sorry, I could not generate the voice response. Please try again.', $e->getMessage());
+            throw new AiServiceException('Sorry, I could not generate the voice response. Please try again.', $e->getMessage());
         }
     }
 
@@ -141,7 +146,7 @@ class OpenAIService
     {
         if ($this->apiKey === '') {
             Log::error('OpenAI API key is not configured.');
-            throw new OpenAIException('The AI service is not configured correctly. Please contact support.');
+            throw new AiServiceException('The AI service is not configured correctly. Please contact support.', 'OpenAI API key is not configured.');
         }
 
         return Http::withToken($this->apiKey)
@@ -150,7 +155,7 @@ class OpenAIService
     }
 
     /**
-     * @throws OpenAIException
+     * @throws AiServiceException
      */
     protected function throwIfFailed(Response $response, string $action): void
     {
@@ -166,19 +171,23 @@ class OpenAIService
             'error' => $errorMessage,
         ]);
 
-        if ($status === 429 && str_contains(strtolower($errorMessage), 'quota')) {
-            throw new OpenAIException('The AI service quota has been exceeded. Please check the OpenAI billing plan and usage limits.', $errorMessage, $status);
+        $userMessage = match ($status) {
+            400 => 'There was an issue with the request sent to the AI. Please try rephrasing your message.',
+            401 => 'The AI service is not configured correctly. Please contact support.',
+            429 => str_contains(strtolower($errorMessage), 'quota')
+                ? 'The AI service quota has been exceeded. Please check the OpenAI billing plan and usage limits.'
+                : 'The AI service is receiving too many requests right now. Please try again in a moment.',
+            500, 503 => 'The AI service is currently unavailable. Please try again later.',
+            default => "Sorry, something went wrong while trying to {$action}. Please try again.",
+        };
+
+        if ($status >= 400 && $status < 500) {
+            // For 4xx errors, the developer message is often the most useful.
+            throw new AiServiceException($userMessage, "OpenAI API Error: {$errorMessage}", $status);
         }
 
-        if ($status === 429) {
-            throw new OpenAIException('The AI service is receiving too many requests right now. Please try again in a moment.', $errorMessage, $status);
-        }
-
-        if ($status === 401) {
-            throw new OpenAIException('The AI service is not configured correctly. Please contact support.', $errorMessage, $status);
-        }
-
-        throw new OpenAIException("Sorry, something went wrong while trying to {$action}. Please try again.", $errorMessage, $status);
+        // For 5xx and other errors.
+        throw new AiServiceException($userMessage, "OpenAI API Error: {$errorMessage}", $status);
     }
 
     protected function logFailure(string $type, Throwable $e): void

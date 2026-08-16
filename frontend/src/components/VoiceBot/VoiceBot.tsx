@@ -1,27 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Language, MicState, VoiceMessage } from '../../types/voice'
-import { useVoiceRecorder } from '../../hooks/useVoiceRecorder'
+import { useSpeechRecognition } from '../../hooks/useSpeechRecognition'
 import { getApiErrorMessage } from '../../services/api'
 import { voiceService } from '../../services/voiceService'
 import Conversation from './Conversation'
 import MicrophoneButton from './MicrophoneButton'
 import VoiceStatus from './VoiceStatus'
-import AudioPlayer from './AudioPlayer'
 
-const DEFAULT_LANGUAGE: Language = 'auto'
-const DEFAULT_VOICE = 'alloy'
+const DEFAULT_LANGUAGE: Language = 'en'
 
 export default function VoiceBot() {
   const [micState, setMicState] = useState<MicState>('idle')
   const [messages, setMessages] = useState<VoiceMessage[]>([])
   const [conversationId, setConversationId] = useState<number>()
   const [language, setLanguage] = useState<Language>(DEFAULT_LANGUAGE)
-  const [voice, setVoice] = useState(DEFAULT_VOICE)
-  const [autoPlay, setAutoPlay] = useState(true)
-  const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const audioRef = useRef<HTMLAudioElement>(null)
-  const { isRecording, isSupported, startRecording, stopRecording } = useVoiceRecorder()
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
+  const { isListening, isSupported, startListening, stopListening } = useSpeechRecognition()
 
   useEffect(() => {
     let ignore = false
@@ -38,15 +33,13 @@ export default function VoiceBot() {
         }
 
         if (settings) {
-          setLanguage(settings.language)
-          setVoice(settings.voice)
-          setAutoPlay(settings.auto_play)
+          setLanguage(DEFAULT_LANGUAGE)
         }
 
         const latestConversation = conversations[0]
         if (latestConversation) {
           setConversationId(latestConversation.id)
-          setLanguage((latestConversation.language || settings?.language || DEFAULT_LANGUAGE))
+          setLanguage(DEFAULT_LANGUAGE)
           setMessages(await voiceService.getMessages(latestConversation.id))
         }
       } catch (error) {
@@ -65,20 +58,37 @@ export default function VoiceBot() {
   }, [])
 
   useEffect(() => {
-    if (!audioUrl || !autoPlay) {
+    return () => {
+      window.speechSynthesis?.cancel()
+    }
+  }, [])
+
+  function speakResponse(text: string) {
+    if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
+      setMicState('idle')
+      setErrorMessage('Speech synthesis is not supported in this browser.')
       return
     }
 
-    void audioRef.current?.play().then(() => setMicState('speaking')).catch(() => setMicState('idle'))
-  }, [audioUrl, autoPlay])
+    window.speechSynthesis.cancel()
 
-  async function updateLanguage(nextLanguage: Language) {
-    setLanguage(nextLanguage)
-    try {
-      await voiceService.updateSettings({ language: nextLanguage })
-    } catch {
-      // Language can still be sent with each request if saving preferences fails.
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = 'en-US'
+    utterance.rate = 1
+    utterance.pitch = 1
+    utterance.onstart = () => setMicState('speaking')
+    utterance.onend = () => {
+      utteranceRef.current = null
+      setMicState('idle')
     }
+    utterance.onerror = () => {
+      utteranceRef.current = null
+      setErrorMessage('Could not speak the AI response.')
+      setMicState('error')
+    }
+
+    utteranceRef.current = utterance
+    window.speechSynthesis.speak(utterance)
   }
 
   async function handleMicClick() {
@@ -89,8 +99,8 @@ export default function VoiceBot() {
     }
 
     if (micState === 'speaking') {
-      audioRef.current?.pause()
-      setAudioUrl(null)
+      window.speechSynthesis.cancel()
+      utteranceRef.current = null
       setMicState('idle')
       return
     }
@@ -101,73 +111,46 @@ export default function VoiceBot() {
       return
     }
 
-    if (isRecording) {
-      setMicState('processing')
-      const audioBlob = await stopRecording()
+    if (isListening) {
+      stopListening()
+      return
+    }
 
-      if (!audioBlob) {
-        setErrorMessage('No audio was captured. Please try again.')
+    try {
+      setMicState('listening')
+      const text = (await startListening()).trim()
+
+      if (!text) {
+        setErrorMessage('I did not hear any speech. Please try again.')
         setMicState('error')
         return
       }
 
-      try {
-        const transcript = await voiceService.transcribe(audioBlob, language)
-        const chat = await voiceService.chat(transcript.text, conversationId, language)
+      setMicState('processing')
+      const chat = await voiceService.chat(text, conversationId, language)
 
-        setConversationId(chat.conversation_id)
-        setMessages((currentMessages) => [
-          ...currentMessages,
-          chat.user_message,
-          chat.assistant_message,
-        ])
+      setConversationId(chat.conversation_id)
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        chat.user_message,
+        chat.assistant_message,
+      ])
 
-        const speech = await voiceService.synthesize(chat.message, voice, chat.assistant_message.id)
-        setAudioUrl(speech.audio_url)
-        setMicState(autoPlay ? 'speaking' : 'idle')
-      } catch (error) {
-        setErrorMessage(getApiErrorMessage(error, 'Voice request failed. Please try again.'))
-        setMicState('error')
-      }
-      return
-    }
-
-    setMicState('listening')
-    const startError = await startRecording()
-
-    if (startError) {
-      setErrorMessage(startError)
+      speakResponse(chat.message)
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error, 'Voice request failed. Please try again.'))
       setMicState('error')
     }
   }
 
   return (
     <div className="voicebot">
-      <div className="voicebot__language" aria-label="Language">
-        {[
-          ['auto', 'Auto'],
-          ['si', 'Sinhala'],
-          ['en', 'English'],
-        ].map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            className={`voicebot__language-option ${language === value ? 'is-active' : ''}`}
-            onClick={() => updateLanguage(value as Language)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
       <Conversation messages={messages} />
 
       <div className="voicebot__controls">
         <MicrophoneButton state={micState} onClick={handleMicClick} />
         <VoiceStatus state={micState} message={micState === 'error' ? errorMessage : null} />
       </div>
-
-      <AudioPlayer ref={audioRef} src={audioUrl} onEnded={() => setAudioUrl(null)} />
     </div>
   )
 }

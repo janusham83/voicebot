@@ -4,35 +4,10 @@ import type {
   ChatResult,
   Conversation,
   Language,
-  SynthesizeResult,
-  TranscribeResult,
   VoiceMessage,
   VoiceSettings,
   AdminDashboardData,
 } from '../types/voice'
-
-function absoluteApiAssetUrl(url: string) {
-  if (/^https?:\/\//i.test(url)) {
-    return url
-  }
-
-  const apiUrl = import.meta.env.VITE_API_URL
-  const origin = apiUrl ? new URL(apiUrl).origin : window.location.origin
-
-  return `${origin}${url.startsWith('/') ? url : `/${url}`}`
-}
-
-function recordingFilename(audioBlob: Blob) {
-  if (audioBlob.type.includes('mp4')) {
-    return 'recording.mp4'
-  }
-
-  if (audioBlob.type.includes('ogg')) {
-    return 'recording.ogg'
-  }
-
-  return 'recording.webm'
-}
 
 export const voiceService = {
   async getConversations() {
@@ -61,36 +36,13 @@ export const voiceService = {
     return data.data.messages
   },
 
-  async transcribe(audioBlob: Blob, language: Language = 'auto') {
-    const formData = new FormData()
-    formData.append('audio', audioBlob, recordingFilename(audioBlob))
-    formData.append('language', language)
-
-    const { data } = await api.post<ApiResponse<TranscribeResult>>('/voice/transcribe', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    return data.data
-  },
-
-  async chat(message: string, conversationId?: number, language: Language = 'auto') {
+  async chat(message: string, conversationId?: number, language: Language = 'en') {
     const { data } = await api.post<ApiResponse<ChatResult>>('/voice/chat', {
       message,
       conversation_id: conversationId,
       language,
     })
     return data.data
-  },
-
-  async synthesize(text: string, voice?: string, messageId?: number) {
-    const { data } = await api.post<ApiResponse<SynthesizeResult>>('/voice/synthesize', {
-      text,
-      voice,
-      message_id: messageId,
-    })
-    return {
-      ...data.data,
-      audio_url: absoluteApiAssetUrl(data.data.audio_url),
-    }
   },
 
   async getSettings() {

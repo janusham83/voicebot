@@ -1,4 +1,4 @@
-export type Language = 'si' | 'en' | 'auto'
+export type Language = 'en'
 
 export type MessageRole = 'user' | 'assistant' | 'system'
 
@@ -53,20 +53,11 @@ export interface ApiResponse<T> {
   data: T
 }
 
-export interface TranscribeResult {
-  text: string
-  language: Language | null
-}
-
 export interface ChatResult {
   conversation_id: number
   message: string
   user_message: VoiceMessage
   assistant_message: VoiceMessage
-}
-
-export interface SynthesizeResult {
-  audio_url: string
 }
 
 export interface AdminDashboardData {

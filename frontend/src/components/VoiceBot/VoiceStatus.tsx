@@ -1,11 +1,11 @@
 import type { MicState } from '../../types/voice'
 
 const STATE_LABELS: Record<MicState, string> = {
-  idle: 'Click to speak',
+  idle: 'Idle',
   listening: 'Listening...',
-  processing: 'Thinking...',
+  processing: 'Processing...',
   speaking: 'Speaking...',
-  error: 'Something went wrong',
+  error: 'Error',
 }
 
 export default function VoiceStatus({ state, message }: { state: MicState; message?: string | null }) {

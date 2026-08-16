@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { authService } from '../services/authService'
 import { AuthContext } from './authContext.ts'
+import type { User } from '../types/voice'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState(null)
+  const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {

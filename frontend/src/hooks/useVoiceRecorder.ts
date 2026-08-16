@@ -25,6 +25,65 @@ function pickSupportedMimeType(): string | undefined {
   return PREFERRED_MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type))
 }
 
+async function blobToWav(blob: Blob): Promise<Blob> {
+  if (blob.type === 'audio/wav') {
+    return blob
+  }
+
+  const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+
+  if (!AudioContextCtor) {
+    return blob
+  }
+
+  try {
+    const context = new AudioContextCtor()
+    const audioBuffer = await context.decodeAudioData(await blob.arrayBuffer())
+    const numberOfChannels = audioBuffer.numberOfChannels
+    const sampleRate = audioBuffer.sampleRate
+    const bytesPerSample = 2
+    const blockAlign = numberOfChannels * bytesPerSample
+    const dataLength = audioBuffer.length * blockAlign
+    const wavBuffer = new ArrayBuffer(44 + dataLength)
+    const view = new DataView(wavBuffer)
+
+    const writeString = (offset: number, value: string) => {
+      for (let i = 0; i < value.length; i += 1) {
+        view.setUint8(offset + i, value.charCodeAt(i))
+      }
+    }
+
+    writeString(0, 'RIFF')
+    view.setUint32(4, 36 + dataLength, true)
+    writeString(8, 'WAVE')
+    writeString(12, 'fmt ')
+    view.setUint32(16, 16, true)
+    view.setUint16(20, 1, true)
+    view.setUint16(22, numberOfChannels, true)
+    view.setUint32(24, sampleRate, true)
+    view.setUint32(28, sampleRate * blockAlign, true)
+    view.setUint16(32, blockAlign, true)
+    view.setUint16(34, 16, true)
+    writeString(36, 'data')
+    view.setUint32(40, dataLength, true)
+
+    let offset = 44
+    for (let sample = 0; sample < audioBuffer.length; sample += 1) {
+      for (let channel = 0; channel < numberOfChannels; channel += 1) {
+        const channelData = audioBuffer.getChannelData(channel)
+        const clamped = Math.max(-1, Math.min(1, channelData[sample]))
+        view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true)
+        offset += 2
+      }
+    }
+
+    await context.close()
+    return new Blob([wavBuffer], { type: 'audio/wav' })
+  } catch {
+    return blob
+  }
+}
+
 /**
  * Wraps the browser MediaRecorder API for capturing a single voice clip at a time.
  */
@@ -136,7 +195,7 @@ export function useVoiceRecorder(): UseVoiceRecorderResult {
 
         const recording = new Blob(chunksRef.current, { type: mimeTypeRef.current })
         chunksRef.current = []
-        resolve(recording)
+        void blobToWav(recording).then((normalizedRecording) => resolve(normalizedRecording))
       }
 
       recorder.stop()
