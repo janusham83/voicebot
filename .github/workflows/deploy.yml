@@ -1,0 +1,56 @@
+# GitHub Actions workflow to build and deploy the Laravel/React app to Hostinger
+
+name: Deploy VoiceBot to Hostinger
+
+# This workflow runs on every push to the 'main' branch
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest # Use the latest Ubuntu runner
+
+    steps:
+      # 1. Check out the repository code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Set up PHP for Composer
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2' # Match your Hostinger PHP version
+          extensions: mbstring, dom, fileinfo, mysql
+          coverage: none
+
+      # 3. Install backend dependencies with Composer
+      - name: Install Composer dependencies
+        working-directory: ./backend
+        run: composer install --no-interaction --no-dev --optimize-autoloader
+
+      # 4. Set up Node.js for the frontend build
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18' # Use a recent LTS version
+
+      # 5. Install frontend dependencies and build the React app
+      - name: Install NPM dependencies and build frontend
+        working-directory: ./frontend
+        run: |
+          npm install
+          npm run build
+
+      # 6. Deploy files to Hostinger via FTP
+      - name: Deploy files via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          # This will upload the entire project.
+          # Ensure your Hostinger domain's document root is set to 'public_html/backend/public'
+          # or adjust the remote-path accordingly.
+          remote-path: ./public_html/
