@@ -34,7 +34,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20' # Use Node.js 20.x to meet dependency requirements
+          node-version: '24' # Update to Node.js 24.x to align with latest GitHub Actions runner defaults and avoid deprecation warnings
 
       # 5. Install frontend dependencies and build the React app
       - name: Install NPM dependencies and build frontend
@@ -43,14 +43,22 @@ jobs:
           npm install
           npm run build
 
-      # 6. Deploy files to Hostinger via FTP
-      - name: Deploy files via FTP
+      # 6. Deploy Backend files to Hostinger via FTP
+      - name: Deploy Backend to FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          # This will upload the entire project.
-          # Ensure your Hostinger domain's document root is set to 'public_html/backend/public'
-          # or adjust the remote-path accordingly.
-          remote-path: ./public_html/
+          local-dir: ./backend/
+          server-dir: /public_html/sub_dom/voicebot/api/
+
+      # 7. Deploy Frontend files to Hostinger via FTP
+      - name: Deploy Frontend to FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./frontend/dist/
+          server-dir: /public_html/sub_dom/voicebot/public_htm/
