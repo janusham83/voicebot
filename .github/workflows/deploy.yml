@@ -34,7 +34,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18' # Use a recent LTS version
+          node-version: '20' # Use Node.js 20.x to meet dependency requirements
 
       # 5. Install frontend dependencies and build the React app
       - name: Install NPM dependencies and build frontend
